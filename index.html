@@ -3,31 +3,44 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Business Job Finder</title>
+    <title>Business Career URL Finder</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
-  <body data-page="finder">
+  <body>
     <main class="container">
       <header>
-        <h1>Business Job Finder</h1>
-        <p>Pick a location and distance to find nearby businesses with open career pages.</p>
+        <h1>Career URL Finder (15-mile radius)</h1>
+        <p>
+          Search from an exact location (default: Mt Vernon, Baltimore, MD) and only show business URLs whose
+          subpage path contains terms like <code>career</code>, <code>careers</code>, <code>job</code>, or
+          <code>jobs</code>.
+        </p>
       </header>
 
       <section class="filters" aria-label="Search filters">
-        <div class="field">
-          <label for="location">Location</label>
-          <select id="location"></select>
+        <div class="field span-2">
+          <label for="locationQuery">Exact location</label>
+          <input
+            id="locationQuery"
+            type="text"
+            value="Mt Vernon, Baltimore, MD"
+            placeholder="e.g., Mt Vernon, Baltimore, MD"
+          />
         </div>
 
         <div class="field">
-          <label for="distance">Distance: <span id="distanceLabel">25 miles</span></label>
-          <input id="distance" type="range" min="5" max="100" step="5" value="25" />
+          <label for="radiusMiles">Radius (miles)</label>
+          <input id="radiusMiles" type="number" value="15" min="1" max="100" />
+        </div>
+
+        <div class="field action-field">
+          <button id="searchButton" class="button" type="button">Find matching business URLs</button>
         </div>
       </section>
 
+      <p id="statusMessage" class="result-count"></p>
       <section>
-        <h2>Businesses in your selected area</h2>
-        <p id="resultCount" class="result-count"></p>
+        <h2>Matching URLs</h2>
         <div id="businessList" class="grid" aria-live="polite"></div>
       </section>
     </main>

@@ -1,71 +1,117 @@
-import { businesses, locations } from './data.js';
+import { businesses, defaultCenter } from './data.js';
 
-const locationSelect = document.querySelector('#location');
-const distanceInput = document.querySelector('#distance');
-const distanceLabel = document.querySelector('#distanceLabel');
-const resultCount = document.querySelector('#resultCount');
+const locationQueryInput = document.querySelector('#locationQuery');
+const radiusMilesInput = document.querySelector('#radiusMiles');
+const searchButton = document.querySelector('#searchButton');
+const statusMessage = document.querySelector('#statusMessage');
 const businessList = document.querySelector('#businessList');
 
+const CAREER_SEGMENTS = ['career', 'careers', 'job', 'jobs', 'employment', 'opportunities'];
+
+const toRadians = (degrees) => (degrees * Math.PI) / 180;
+
 const milesBetween = (lat1, lon1, lat2, lon2) => {
-  const toRad = (degrees) => (degrees * Math.PI) / 180;
   const earthRadiusMiles = 3958.8;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
+  const dLat = toRadians(lat2 - lat1);
+  const dLon = toRadians(lon2 - lon1);
 
   const a =
     Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) ** 2;
 
   return earthRadiusMiles * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 };
 
-const populateLocations = () => {
-  locations.forEach((location) => {
-    const option = document.createElement('option');
-    option.value = location.id;
-    option.textContent = location.name;
-    locationSelect.append(option);
-  });
+const hasCareerSubpage = (urlValue) => {
+  try {
+    const parsed = new URL(urlValue);
+    const path = parsed.pathname.toLowerCase();
+    const hostname = parsed.hostname.toLowerCase();
+
+    return CAREER_SEGMENTS.some(
+      (segment) => path.includes(`/${segment}`) || path.includes(`${segment}/`) || hostname.startsWith(`${segment}.`)
+    );
+  } catch {
+    return false;
+  }
 };
 
-const renderBusinesses = () => {
-  const selectedLocation = locations.find(({ id }) => id === locationSelect.value) || locations[0];
-  const selectedDistance = Number(distanceInput.value);
-  distanceLabel.textContent = `${selectedDistance} miles`;
+const geocodeLocation = async (query) => {
+  const trimmed = query.trim();
 
-  const results = businesses
-    .map((business) => ({
-      ...business,
-      distance: milesBetween(selectedLocation.lat, selectedLocation.lon, business.lat, business.lon)
-    }))
-    .filter(({ distance }) => distance <= selectedDistance)
-    .sort((a, b) => a.distance - b.distance);
-
-  resultCount.textContent = `${results.length} business${results.length === 1 ? '' : 'es'} found within ${selectedDistance} miles of ${selectedLocation.name}.`;
-
-  businessList.innerHTML = '';
-
-  if (!results.length) {
-    businessList.innerHTML = '<p class="empty-state">No businesses found in this range. Increase your distance to see more options.</p>';
-    return;
+  if (!trimmed || trimmed.toLowerCase() === defaultCenter.label.toLowerCase()) {
+    return defaultCenter;
   }
 
-  results.forEach((business) => {
-    const card = document.createElement('article');
-    card.className = 'card';
-    card.innerHTML = `
-      <h3>${business.name}</h3>
-      <p>${business.category} • ${business.location}</p>
-      <p><strong>${business.distance.toFixed(1)} miles away</strong></p>
-      <a class="button" href="careers.html?business=${encodeURIComponent(business.id)}">View jobs & careers</a>
-    `;
-    businessList.append(card);
+  const endpoint = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(trimmed)}`;
+  const response = await fetch(endpoint, {
+    headers: {
+      Accept: 'application/json'
+    }
   });
+
+  if (!response.ok) {
+    throw new Error('Unable to geocode the location right now.');
+  }
+
+  const results = await response.json();
+  if (!results.length) {
+    throw new Error('No matching location found. Try a more specific address.');
+  }
+
+  return {
+    label: trimmed,
+    lat: Number(results[0].lat),
+    lon: Number(results[0].lon)
+  };
 };
 
-populateLocations();
-locationSelect.value = locations[0].id;
-renderBusinesses();
+const renderResults = async () => {
+  const radiusMiles = Number(radiusMilesInput.value) || 15;
+  const locationQuery = locationQueryInput.value;
 
-locationSelect.addEventListener('change', renderBusinesses);
-distanceInput.addEventListener('input', renderBusinesses);
+  statusMessage.textContent = 'Searching…';
+  businessList.innerHTML = '';
+
+  try {
+    const center = await geocodeLocation(locationQuery);
+
+    const filtered = businesses
+      .filter((business) => hasCareerSubpage(business.website))
+      .map((business) => ({
+        ...business,
+        distance: milesBetween(center.lat, center.lon, business.lat, business.lon)
+      }))
+      .filter((business) => business.distance <= radiusMiles)
+      .sort((a, b) => a.distance - b.distance);
+
+    statusMessage.textContent = `${filtered.length} matching business URL${filtered.length === 1 ? '' : 's'} found within ${radiusMiles} miles of ${center.label}.`;
+
+    if (!filtered.length) {
+      businessList.innerHTML = '<p class="empty-state">No matching career/job URLs found in that radius.</p>';
+      return;
+    }
+
+    filtered.forEach((business) => {
+      const card = document.createElement('article');
+      card.className = 'card';
+      card.innerHTML = `
+        <h3>${business.name}</h3>
+        <p>${business.location}</p>
+        <p><strong>${business.distance.toFixed(1)} miles away</strong></p>
+        <p class="url-line">${business.website}</p>
+        <a class="button" href="${business.website}" target="_blank" rel="noopener noreferrer">Open career/jobs URL</a>
+      `;
+      businessList.append(card);
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unexpected error while searching.';
+    statusMessage.textContent = message;
+    businessList.innerHTML = '<p class="empty-state">Please update the location and try again.</p>';
+  }
+};
+
+searchButton.addEventListener('click', renderResults);
+radiusMilesInput.addEventListener('change', renderResults);
+
+renderResults();

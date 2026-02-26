@@ -1,74 +1,56 @@
-export const locations = [
-  { id: 'seattle', name: 'Seattle, WA', lat: 47.6062, lon: -122.3321 },
-  { id: 'portland', name: 'Portland, OR', lat: 45.5152, lon: -122.6784 },
-  { id: 'san-francisco', name: 'San Francisco, CA', lat: 37.7749, lon: -122.4194 },
-  { id: 'denver', name: 'Denver, CO', lat: 39.7392, lon: -104.9903 }
-];
+export const defaultCenter = {
+  label: 'Mt Vernon, Baltimore, MD',
+  lat: 39.2974,
+  lon: -76.6169
+};
 
 export const businesses = [
   {
-    id: 'northstar-coffee',
-    name: 'Northstar Coffee Roasters',
-    category: 'Food & Beverage',
-    location: 'Seattle, WA',
-    lat: 47.621,
-    lon: -122.336,
-    careersUrl: 'https://example.com/northstar/careers',
-    jobs: [
-      { title: 'Barista', type: 'Full-time' },
-      { title: 'Shift Lead', type: 'Full-time' }
-    ]
+    id: 'medstar-health',
+    name: 'MedStar Health',
+    location: 'Baltimore, MD',
+    lat: 39.3017,
+    lon: -76.5931,
+    website: 'https://www.medstarhealth.org/careers'
   },
   {
-    id: 'cascade-digital',
-    name: 'Cascade Digital Solutions',
-    category: 'Technology',
-    location: 'Seattle, WA',
-    lat: 47.598,
-    lon: -122.331,
-    careersUrl: 'https://example.com/cascade/jobs',
-    jobs: [
-      { title: 'Front-End Developer', type: 'Full-time' },
-      { title: 'Product Designer', type: 'Contract' }
-    ]
+    id: 'under-armour',
+    name: 'Under Armour',
+    location: 'Baltimore, MD',
+    lat: 39.2705,
+    lon: -76.6013,
+    website: 'https://careers.underarmour.com/'
   },
   {
-    id: 'rose-city-health',
-    name: 'Rose City Health Partners',
-    category: 'Healthcare',
-    location: 'Portland, OR',
-    lat: 45.523,
-    lon: -122.676,
-    careersUrl: 'https://example.com/rosecity/careers',
-    jobs: [
-      { title: 'Medical Assistant', type: 'Full-time' },
-      { title: 'Patient Coordinator', type: 'Part-time' }
-    ]
+    id: 'johns-hopkins-medicine',
+    name: 'Johns Hopkins Medicine',
+    location: 'Baltimore, MD',
+    lat: 39.2965,
+    lon: -76.592,
+    website: 'https://jobs.hopkinsmedicine.org/'
   },
   {
-    id: 'bayline-logistics',
-    name: 'Bayline Logistics',
-    category: 'Supply Chain',
-    location: 'San Francisco, CA',
-    lat: 37.784,
-    lon: -122.407,
-    careersUrl: 'https://example.com/bayline/jobs',
-    jobs: [
-      { title: 'Operations Analyst', type: 'Full-time' },
-      { title: 'Dispatcher', type: 'Full-time' }
-    ]
+    id: 'mta-maryland',
+    name: 'Maryland Transit Administration',
+    location: 'Baltimore, MD',
+    lat: 39.3078,
+    lon: -76.6178,
+    website: 'https://www.mta.maryland.gov/jobs'
   },
   {
-    id: 'milehigh-renewables',
-    name: 'Mile High Renewables',
-    category: 'Energy',
-    location: 'Denver, CO',
-    lat: 39.744,
-    lon: -104.989,
-    careersUrl: 'https://example.com/milehigh/careers',
-    jobs: [
-      { title: 'Field Technician', type: 'Full-time' },
-      { title: 'Project Coordinator', type: 'Hybrid' }
-    ]
+    id: 't-rowe-price',
+    name: 'T. Rowe Price',
+    location: 'Baltimore, MD',
+    lat: 39.2881,
+    lon: -76.6134,
+    website: 'https://www.troweprice.com/corporate/us/en/careers.html'
+  },
+  {
+    id: 'sample-non-careers-url',
+    name: 'Example Company (filtered out)',
+    location: 'Baltimore, MD',
+    lat: 39.2907,
+    lon: -76.612,
+    website: 'https://example.org/about'
   }
 ];
