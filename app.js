@@ -4,7 +4,8 @@ import {
   careerSegments,
   defaultCenter,
   externalJobSearches,
-  fallbackBusinesses
+  fallbackBusinesses,
+  jobRoleKeywords
 } from './data.js';
 
 const cityInput = document.querySelector('#cityQuery');
@@ -14,33 +15,28 @@ const statusMessage = document.querySelector('#statusMessage');
 const businessList = document.querySelector('#businessList');
 const strictUrlToggle = document.querySelector('#strictUrlToggle');
 const externalLinksList = document.querySelector('#externalLinksList');
+const highVolumeLinksList = document.querySelector('#highVolumeLinksList');
+const highVolumeCount = document.querySelector('#highVolumeCount');
 
 let activeSearchId = 0;
 
 const toRadians = (degrees) => (degrees * Math.PI) / 180;
-
 const milesBetween = (lat1, lon1, lat2, lon2) => {
   const earthRadiusMiles = 3958.8;
   const dLat = toRadians(lat2 - lat1);
   const dLon = toRadians(lon2 - lon1);
-
   const a =
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) ** 2;
-
   return earthRadiusMiles * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 };
 
 const hasCareerSubpage = (urlValue) => {
-  if (!urlValue) {
-    return false;
-  }
-
+  if (!urlValue) return false;
   try {
     const parsed = new URL(urlValue);
     const path = parsed.pathname.toLowerCase();
     const hostname = parsed.hostname.toLowerCase();
-
     return careerSegments.some(
       (segment) => path.includes(`/${segment}`) || path.includes(`${segment}/`) || hostname.startsWith(`${segment}.`)
     );
@@ -50,17 +46,10 @@ const hasCareerSubpage = (urlValue) => {
 };
 
 const normalizeUrl = (value) => {
-  if (!value) {
-    return null;
-  }
-
+  if (!value) return null;
   const candidate = value.trim();
-  if (!candidate) {
-    return null;
-  }
-
+  if (!candidate) return null;
   const withProtocol = /^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`;
-
   try {
     return new URL(withProtocol).toString();
   } catch {
@@ -70,34 +59,24 @@ const normalizeUrl = (value) => {
 
 const buildOverpassCategoryQuery = (radiusMeters, center) => {
   const lines = [];
-
   businessTagPairs.forEach(([tag, pattern]) => {
     ['node', 'way', 'relation'].forEach((entity) => {
       lines.push(`  ${entity}(around:${radiusMeters},${center.lat},${center.lon})[name][${tag}~"${pattern}"];`);
     });
   });
-
   return lines.join('\n');
 };
 
 const geocodeCity = async (query) => {
   const trimmed = query.trim();
-
-  if (!trimmed || trimmed.toLowerCase() === defaultCenter.label.toLowerCase()) {
-    return defaultCenter;
-  }
+  if (!trimmed || trimmed.toLowerCase() === defaultCenter.label.toLowerCase()) return defaultCenter;
 
   const endpoint = `https://nominatim.openstreetmap.org/search?format=json&limit=1&addressdetails=1&q=${encodeURIComponent(trimmed)}`;
   const response = await fetch(endpoint, { headers: { Accept: 'application/json' } });
-
-  if (!response.ok) {
-    throw new Error('Unable to find that city right now.');
-  }
+  if (!response.ok) throw new Error('Unable to find that city right now.');
 
   const results = await response.json();
-  if (!results.length) {
-    throw new Error('City not found. Try city and state, like "Baltimore, MD".');
-  }
+  if (!results.length) throw new Error('City not found. Try city and state, like "Baltimore, MD".');
 
   return {
     label: results[0].display_name || trimmed,
@@ -122,51 +101,31 @@ out center tags 250;
     headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
     body: query
   });
-
-  if (!response.ok) {
-    throw new Error('Unable to fetch nearby businesses right now. Try again in a minute.');
-  }
+  if (!response.ok) throw new Error('Unable to fetch nearby businesses right now. Try again in a minute.');
 
   const data = await response.json();
   const deduped = new Map();
-
   (data.elements || []).forEach((element) => {
     const tags = element.tags || {};
     const name = (tags.name || '').trim();
     const lat = element.lat ?? element.center?.lat;
     const lon = element.lon ?? element.center?.lon;
-
-    if (!name || typeof lat !== 'number' || typeof lon !== 'number') {
-      return;
-    }
+    if (!name || typeof lat !== 'number' || typeof lon !== 'number') return;
 
     const website = normalizeUrl(tags.website || tags['contact:website']);
     const kind = tags.shop || tags.amenity || tags.office || tags.craft || 'business';
     const sourceUrl = `https://www.openstreetmap.org/${element.type}/${element.id}`;
-
     const key = `${name.toLowerCase()}::${lat.toFixed(5)}::${lon.toFixed(5)}`;
+
     if (!deduped.has(key)) {
-      deduped.set(key, {
-        id: key,
-        name,
-        website,
-        lat,
-        lon,
-        kind,
-        source: 'OpenStreetMap',
-        sourceUrl
-      });
+      deduped.set(key, { id: key, name, website, lat, lon, kind, source: 'OpenStreetMap', sourceUrl });
     }
   });
-
   return [...deduped.values()];
 };
 
 const inferredCareerLinks = (website) => {
-  if (!website) {
-    return [];
-  }
-
+  if (!website) return [];
   try {
     const parsed = new URL(website);
     const base = `${parsed.protocol}//${parsed.host}`;
@@ -178,32 +137,58 @@ const inferredCareerLinks = (website) => {
 
 const dedupeBusinesses = (items) => {
   const map = new Map();
-
   items.forEach((business) => {
     const key = business.website ? business.website.toLowerCase() : business.name.toLowerCase();
-    if (!map.has(key)) {
-      map.set(key, business);
-    }
+    if (!map.has(key)) map.set(key, business);
   });
-
   return [...map.values()];
 };
 
-const renderExternalLinks = (cityLabel) => {
-  const city = encodeURIComponent(cityLabel);
-  const query = encodeURIComponent('hiring careers jobs');
+const buildBoardUrl = (template, cityLabel, queryTerm) =>
+  template
+    .replace('{city}', encodeURIComponent(cityLabel))
+    .replace('{query}', encodeURIComponent(queryTerm));
 
+const renderExternalLinks = (cityLabel) => {
   externalLinksList.innerHTML = externalJobSearches
     .map(({ name, urlTemplate }) => {
-      const url = urlTemplate.replace('{city}', city).replace('{query}', query);
+      const url = buildBoardUrl(urlTemplate, cityLabel, 'hiring careers jobs');
       return `<li><a href="${url}" target="_blank" rel="noopener noreferrer">${name}</a></li>`;
     })
     .join('');
 };
 
+const renderHighVolumeLinks = (cityLabel, businesses) => {
+  const links = [];
+
+  externalJobSearches.forEach(({ name, urlTemplate }) => {
+    jobRoleKeywords.forEach((role) => {
+      links.push({
+        label: `${name} — ${role}`,
+        url: buildBoardUrl(urlTemplate, cityLabel, role)
+      });
+    });
+  });
+
+  businesses.slice(0, 80).forEach((business) => {
+    const query = `${business.name} careers jobs`;
+    externalJobSearches.forEach(({ name, urlTemplate }) => {
+      links.push({
+        label: `${name} — ${business.name}`,
+        url: buildBoardUrl(urlTemplate, cityLabel, query)
+      });
+    });
+  });
+
+  highVolumeCount.textContent = `${links.length} search links generated.`;
+  highVolumeLinksList.innerHTML = links
+    .slice(0, 220)
+    .map(({ label, url }) => `<li><a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a></li>`)
+    .join('');
+};
+
 const renderCards = (results, strictMode) => {
   const visible = strictMode ? results.filter((item) => hasCareerSubpage(item.website)) : results;
-
   if (!visible.length) {
     businessList.innerHTML =
       '<p class="empty-state">No businesses matched the current filter. Turn off strict URL mode to show all businesses found for this city.</p>';
@@ -211,16 +196,12 @@ const renderCards = (results, strictMode) => {
   }
 
   businessList.innerHTML = '';
-
   visible.forEach((business) => {
     const detectedCareerUrl = hasCareerSubpage(business.website);
     const fallbackLinks = inferredCareerLinks(business.website);
-
     const linksHtml = detectedCareerUrl
       ? `<li><a href="${business.website}" target="_blank" rel="noopener noreferrer">${business.website}</a></li>`
-      : fallbackLinks
-          .map((url) => `<li><a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a></li>`)
-          .join('');
+      : fallbackLinks.map((url) => `<li><a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a></li>`).join('');
 
     const websiteLine = business.website
       ? `<p class="url-line">Website: <a href="${business.website}" target="_blank" rel="noopener noreferrer">${business.website}</a></p>`
@@ -256,7 +237,7 @@ const withComputedDistance = (items, center) =>
 const renderStatus = (items, center, radiusMiles, note = '') => {
   const withWebsite = items.filter((business) => Boolean(business.website)).length;
   const withCareerKeyword = items.filter((business) => hasCareerSubpage(business.website)).length;
-  statusMessage.textContent = `Found ${items.length} businesses around ${center.label} (${radiusMiles} miles). ${withWebsite} include websites and ${withCareerKeyword} already include career/job keywords.${note}`;
+  statusMessage.textContent = `Found ${items.length} employers around ${center.label} (${radiusMiles} miles). ${withWebsite} include websites and ${withCareerKeyword} already include career/job keywords.${note}`;
 };
 
 const renderResults = async () => {
@@ -277,6 +258,7 @@ const renderResults = async () => {
 
     let combined = withComputedDistance(dedupeBusinesses(fallbackNearby), center);
     renderExternalLinks(center.label);
+    renderHighVolumeLinks(center.label, combined);
     renderStatus(combined, center, radiusMiles, ' Showing fast curated matches now.');
     renderCards(combined, strictMode);
 
@@ -287,13 +269,12 @@ const renderResults = async () => {
       discovered = [];
     }
 
-    if (currentSearchId !== activeSearchId) {
-      return;
-    }
+    if (currentSearchId !== activeSearchId) return;
 
     if (discovered.length) {
       combined = withComputedDistance(dedupeBusinesses([...discovered, ...fallbackNearby]), center);
       renderStatus(combined, center, radiusMiles, ' Live map results merged in.');
+      renderHighVolumeLinks(center.label, combined);
       renderCards(combined, strictMode);
     }
   } catch (error) {
@@ -301,6 +282,8 @@ const renderResults = async () => {
     statusMessage.textContent = message;
     businessList.innerHTML = '<p class="empty-state">Try a different city text (example: Baltimore, MD).</p>';
     externalLinksList.innerHTML = '';
+    highVolumeLinksList.innerHTML = '';
+    highVolumeCount.textContent = '';
   }
 };
 

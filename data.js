@@ -66,3 +66,10 @@ export const externalJobSearches = [
   { name: 'ZipRecruiter', urlTemplate: 'https://www.ziprecruiter.com/Jobs/{city}' },
   { name: 'Glassdoor', urlTemplate: 'https://www.glassdoor.com/Job/{city}-jobs-SRCH_IL.0,0_IM63.htm' }
 ];
+
+export const jobRoleKeywords = [
+  'software engineer', 'registered nurse', 'medical assistant', 'data analyst', 'customer service',
+  'warehouse', 'delivery driver', 'teacher', 'accountant', 'project manager', 'security officer',
+  'administrative assistant', 'electrician', 'plumber', 'sales associate', 'marketing', 'hr',
+  'business analyst', 'cybersecurity', 'mechanic'
+];
