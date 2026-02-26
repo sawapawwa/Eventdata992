@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Business Career URL Finder</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header>
+        <h1>City Business Finder + Career URL Hints</h1>
+        <p>
+          Search by city (for example, <code>Baltimore, MD</code>) and radius. This now shows all mapped businesses,
+          across many business categories (shop, amenity, office, craft, tourism, industrial, and more), then optionally narrows to URLs that already contain career/job keywords.
+        </p>
+      </header>
+
+      <section class="filters" aria-label="Search filters">
+        <div class="field span-2">
+          <label for="cityQuery">City</label>
+          <input id="cityQuery" type="text" value="Baltimore, MD" placeholder="e.g., Baltimore, MD" />
+        </div>
+
+        <div class="field">
+          <label for="radiusMiles">Radius (miles)</label>
+          <input id="radiusMiles" type="number" value="15" min="1" max="100" />
+        </div>
+
+        <div class="field checkbox-field">
+          <label for="strictUrlToggle">Strict URL mode</label>
+          <div class="checkbox-line">
+            <input id="strictUrlToggle" type="checkbox" />
+            <span>Only show businesses whose URL already contains career/jobs terms</span>
+          </div>
+        </div>
+
+        <div class="field action-field">
+          <button id="searchButton" class="button" type="button">Search city businesses</button>
+        </div>
+      </section>
+
+      <p id="statusMessage" class="result-count"></p>
+
+      <section>
+        <h2>Extra job search sources</h2>
+        <p class="result-count">These are direct links to major job boards for this city and hiring keywords (another high-volume way to find openings quickly).</p>
+        <ul id="externalLinksList" class="external-links"></ul>
+      </section>
+
+      
+      <section>
+        <h2>High-volume hiring searches</h2>
+        <p id="highVolumeCount" class="result-count"></p>
+        <ul id="highVolumeLinksList" class="external-links"></ul>
+      </section>
+
+      <section>
+        <h2>Business results</h2>
+        <div id="businessList" class="grid" aria-live="polite"></div>
+      </section>
+    </main>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
