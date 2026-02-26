@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Business Job Finder</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body data-page="finder">
+    <main class="container">
+      <header>
+        <h1>Business Job Finder</h1>
+        <p>Pick a location and distance to find nearby businesses with open career pages.</p>
+      </header>
+
+      <section class="filters" aria-label="Search filters">
+        <div class="field">
+          <label for="location">Location</label>
+          <select id="location"></select>
+        </div>
+
+        <div class="field">
+          <label for="distance">Distance: <span id="distanceLabel">25 miles</span></label>
+          <input id="distance" type="range" min="5" max="100" step="5" value="25" />
+        </div>
+      </section>
+
+      <section>
+        <h2>Businesses in your selected area</h2>
+        <p id="resultCount" class="result-count"></p>
+        <div id="businessList" class="grid" aria-live="polite"></div>
+      </section>
+    </main>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
