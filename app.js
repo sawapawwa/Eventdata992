@@ -5,7 +5,8 @@ import {
   defaultCenter,
   externalJobSearches,
   fallbackBusinesses,
-  jobRoleKeywords
+  jobRoleKeywords,
+  overpassEndpoints
 } from './data.js';
 
 const cityInput = document.querySelector('#cityQuery');
@@ -57,6 +58,18 @@ const normalizeUrl = (value) => {
   }
 };
 
+
+const fetchWithTimeout = async (url, options = {}, timeoutMs = 9000) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    return response;
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 const buildOverpassCategoryQuery = (radiusMeters, center) => {
   const lines = [];
   businessTagPairs.forEach(([tag, pattern]) => {
@@ -93,35 +106,55 @@ const fetchBusinessesFromOverpass = async (center, radiusMiles) => {
 (
 ${categoryQuery}
 );
-out center tags 250;
+out center tags 300;
 `.trim();
 
-  const response = await fetch('https://overpass-api.de/api/interpreter', {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-    body: query
-  });
-  if (!response.ok) throw new Error('Unable to fetch nearby businesses right now. Try again in a minute.');
+  let lastError = null;
 
-  const data = await response.json();
-  const deduped = new Map();
-  (data.elements || []).forEach((element) => {
-    const tags = element.tags || {};
-    const name = (tags.name || '').trim();
-    const lat = element.lat ?? element.center?.lat;
-    const lon = element.lon ?? element.center?.lon;
-    if (!name || typeof lat !== 'number' || typeof lon !== 'number') return;
+  for (const endpoint of overpassEndpoints) {
+    try {
+      const response = await fetchWithTimeout(
+        endpoint,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+          body: query
+        },
+        9000
+      );
 
-    const website = normalizeUrl(tags.website || tags['contact:website']);
-    const kind = tags.shop || tags.amenity || tags.office || tags.craft || 'business';
-    const sourceUrl = `https://www.openstreetmap.org/${element.type}/${element.id}`;
-    const key = `${name.toLowerCase()}::${lat.toFixed(5)}::${lon.toFixed(5)}`;
+      if (!response.ok) {
+        lastError = new Error(`Overpass endpoint failed: ${endpoint}`);
+        continue;
+      }
 
-    if (!deduped.has(key)) {
-      deduped.set(key, { id: key, name, website, lat, lon, kind, source: 'OpenStreetMap', sourceUrl });
+      const data = await response.json();
+      const deduped = new Map();
+
+      (data.elements || []).forEach((element) => {
+        const tags = element.tags || {};
+        const name = (tags.name || '').trim();
+        const lat = element.lat ?? element.center?.lat;
+        const lon = element.lon ?? element.center?.lon;
+        if (!name || typeof lat !== 'number' || typeof lon !== 'number') return;
+
+        const website = normalizeUrl(tags.website || tags['contact:website']);
+        const kind = tags.shop || tags.amenity || tags.office || tags.craft || 'business';
+        const sourceUrl = `https://www.openstreetmap.org/${element.type}/${element.id}`;
+        const key = `${name.toLowerCase()}::${lat.toFixed(5)}::${lon.toFixed(5)}`;
+
+        if (!deduped.has(key)) {
+          deduped.set(key, { id: key, name, website, lat, lon, kind, source: 'OpenStreetMap', sourceUrl });
+        }
+      });
+
+      return [...deduped.values()];
+    } catch (error) {
+      lastError = error;
     }
-  });
-  return [...deduped.values()];
+  }
+
+  throw lastError || new Error('Unable to fetch nearby businesses from Overpass endpoints.');
 };
 
 const inferredCareerLinks = (website) => {
@@ -203,6 +236,14 @@ const renderCards = (results, strictMode) => {
       ? `<li><a href="${business.website}" target="_blank" rel="noopener noreferrer">${business.website}</a></li>`
       : fallbackLinks.map((url) => `<li><a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a></li>`).join('');
 
+    const localSearchLinks = externalJobSearches
+      .map(({ name, urlTemplate }) => {
+        const query = `${business.name} jobs careers team join us`;
+        const url = buildBoardUrl(urlTemplate, cityInput.value || defaultCenter.label, query);
+        return `<li><a href="${url}" target="_blank" rel="noopener noreferrer">${name} search for ${business.name}</a></li>`;
+      })
+      .join('');
+
     const websiteLine = business.website
       ? `<p class="url-line">Website: <a href="${business.website}" target="_blank" rel="noopener noreferrer">${business.website}</a></p>`
       : '<p class="url-line">Website not listed in map data.</p>';
@@ -219,6 +260,8 @@ const renderCards = (results, strictMode) => {
       ${websiteLine}
       <p><strong>${detectedCareerUrl ? 'Detected career/jobs URL' : 'Possible career/jobs links'}</strong></p>
       <ul class="url-list">${linksHtml || '<li>No website available to generate links.</li>'}</ul>
+      <p><strong>More ways to find this employer hiring:</strong></p>
+      <ul class="url-list">${localSearchLinks}</ul>
       <p class="source-line">Source: ${sourceLink}</p>
     `;
     businessList.append(card);
@@ -257,23 +300,29 @@ const renderResults = async () => {
       .map((business) => ({ ...business, sourceUrl: business.website }));
 
     let combined = withComputedDistance(dedupeBusinesses(fallbackNearby), center);
+    let discovered = [];
+    let liveMessage = '';
+
     renderExternalLinks(center.label);
     renderHighVolumeLinks(center.label, combined);
-    renderStatus(combined, center, radiusMiles, ' Showing fast curated matches now.');
+    renderStatus(combined, center, radiusMiles, ` Showing fast curated matches now.${liveMessage}`);
     renderCards(combined, strictMode);
-
-    let discovered = [];
     try {
       discovered = await fetchBusinessesFromOverpass(center, radiusMiles);
     } catch {
       discovered = [];
+      liveMessage = ' Live map endpoints were unavailable, so only fallback employers are shown right now.';
     }
 
     if (currentSearchId !== activeSearchId) return;
 
+    if (!discovered.length && liveMessage) {
+      renderStatus(combined, center, radiusMiles, ` Showing fast curated matches now.${liveMessage}`);
+    }
+
     if (discovered.length) {
       combined = withComputedDistance(dedupeBusinesses([...discovered, ...fallbackNearby]), center);
-      renderStatus(combined, center, radiusMiles, ' Live map results merged in.');
+      renderStatus(combined, center, radiusMiles, ' Live map results merged in from Overpass endpoints.');
       renderHighVolumeLinks(center.label, combined);
       renderCards(combined, strictMode);
     }

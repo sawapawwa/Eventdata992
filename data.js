@@ -4,7 +4,7 @@ export const defaultCenter = {
   lon: -76.6169
 };
 
-export const careerSegments = ['career', 'careers', 'job', 'jobs', 'employment', 'opportunities'];
+export const careerSegments = ['career', 'careers', 'job', 'jobs', 'employment', 'opportunities', 'team', 'join-us', 'join', 'hiring', 'openings', 'vacancies', 'recruitment', 'talent', 'work-with-us'];
 
 export const careerPathCandidates = [
   '/careers',
@@ -14,7 +14,14 @@ export const careerPathCandidates = [
   '/employment',
   '/opportunities',
   '/join-us',
-  '/work-with-us'
+  '/work-with-us',
+  '/team',
+  '/join',
+  '/hiring',
+  '/openings',
+  '/vacancies',
+  '/recruitment',
+  '/talent'
 ];
 
 export const businessTagPairs = [
@@ -72,4 +79,11 @@ export const jobRoleKeywords = [
   'warehouse', 'delivery driver', 'teacher', 'accountant', 'project manager', 'security officer',
   'administrative assistant', 'electrician', 'plumber', 'sales associate', 'marketing', 'hr',
   'business analyst', 'cybersecurity', 'mechanic'
+];
+
+
+export const overpassEndpoints = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter'
 ];
