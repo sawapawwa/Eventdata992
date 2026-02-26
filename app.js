@@ -6,7 +6,8 @@ import {
   externalJobSearches,
   fallbackBusinesses,
   jobRoleKeywords,
-  overpassEndpoints
+  overpassEndpoints,
+  cityCenters
 } from './data.js';
 
 const cityInput = document.querySelector('#cityQuery');
@@ -58,13 +59,11 @@ const normalizeUrl = (value) => {
   }
 };
 
-
 const fetchWithTimeout = async (url, options = {}, timeoutMs = 9000) => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, { ...options, signal: controller.signal });
-    return response;
+    return await fetch(url, { ...options, signal: controller.signal });
   } finally {
     clearTimeout(timer);
   }
@@ -80,81 +79,57 @@ const buildOverpassCategoryQuery = (radiusMeters, center) => {
   return lines.join('\n');
 };
 
+const resolveCityLocally = (query) => {
+  const key = query.trim().toLowerCase();
+  if (!key) return defaultCenter;
+  return cityCenters[key] || null;
+};
+
 const geocodeCity = async (query) => {
   const trimmed = query.trim();
-  if (!trimmed || trimmed.toLowerCase() === defaultCenter.label.toLowerCase()) return defaultCenter;
+  const local = resolveCityLocally(trimmed);
+  if (local) return local;
 
   const endpoint = `https://nominatim.openstreetmap.org/search?format=json&limit=1&addressdetails=1&q=${encodeURIComponent(trimmed)}`;
-  const response = await fetch(endpoint, { headers: { Accept: 'application/json' } });
-  if (!response.ok) throw new Error('Unable to find that city right now.');
-
+  const response = await fetchWithTimeout(endpoint, { headers: { Accept: 'application/json' } }, 6000);
+  if (!response.ok) throw new Error('Unable to geocode city with remote API.');
   const results = await response.json();
-  if (!results.length) throw new Error('City not found. Try city and state, like "Baltimore, MD".');
-
-  return {
-    label: results[0].display_name || trimmed,
-    lat: Number(results[0].lat),
-    lon: Number(results[0].lon)
-  };
+  if (!results.length) throw new Error('City not found remotely.');
+  return { label: results[0].display_name || trimmed, lat: Number(results[0].lat), lon: Number(results[0].lon) };
 };
 
 const fetchBusinessesFromOverpass = async (center, radiusMiles) => {
   const radiusMeters = Math.round(radiusMiles * 1609.34);
-  const categoryQuery = buildOverpassCategoryQuery(radiusMeters, center);
-  const query = `
-[out:json][timeout:25];
-(
-${categoryQuery}
-);
-out center tags 300;
-`.trim();
-
-  let lastError = null;
+  const query = `\n[out:json][timeout:20];\n(\n${buildOverpassCategoryQuery(radiusMeters, center)}\n);\nout center tags 250;\n`.trim();
 
   for (const endpoint of overpassEndpoints) {
     try {
       const response = await fetchWithTimeout(
         endpoint,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-          body: query
-        },
-        9000
+        { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: query },
+        8000
       );
-
-      if (!response.ok) {
-        lastError = new Error(`Overpass endpoint failed: ${endpoint}`);
-        continue;
-      }
-
+      if (!response.ok) continue;
       const data = await response.json();
       const deduped = new Map();
-
       (data.elements || []).forEach((element) => {
         const tags = element.tags || {};
         const name = (tags.name || '').trim();
         const lat = element.lat ?? element.center?.lat;
         const lon = element.lon ?? element.center?.lon;
         if (!name || typeof lat !== 'number' || typeof lon !== 'number') return;
-
         const website = normalizeUrl(tags.website || tags['contact:website']);
         const kind = tags.shop || tags.amenity || tags.office || tags.craft || 'business';
         const sourceUrl = `https://www.openstreetmap.org/${element.type}/${element.id}`;
         const key = `${name.toLowerCase()}::${lat.toFixed(5)}::${lon.toFixed(5)}`;
-
-        if (!deduped.has(key)) {
-          deduped.set(key, { id: key, name, website, lat, lon, kind, source: 'OpenStreetMap', sourceUrl });
-        }
+        if (!deduped.has(key)) deduped.set(key, { id: key, name, website, lat, lon, kind, source: 'OpenStreetMap', sourceUrl });
       });
-
       return [...deduped.values()];
-    } catch (error) {
-      lastError = error;
+    } catch {
+      // try next endpoint
     }
   }
-
-  throw lastError || new Error('Unable to fetch nearby businesses from Overpass endpoints.');
+  return [];
 };
 
 const inferredCareerLinks = (website) => {
@@ -178,44 +153,27 @@ const dedupeBusinesses = (items) => {
 };
 
 const buildBoardUrl = (template, cityLabel, queryTerm) =>
-  template
-    .replace('{city}', encodeURIComponent(cityLabel))
-    .replace('{query}', encodeURIComponent(queryTerm));
+  template.replace('{city}', encodeURIComponent(cityLabel)).replace('{query}', encodeURIComponent(queryTerm));
 
 const renderExternalLinks = (cityLabel) => {
   externalLinksList.innerHTML = externalJobSearches
-    .map(({ name, urlTemplate }) => {
-      const url = buildBoardUrl(urlTemplate, cityLabel, 'hiring careers jobs');
-      return `<li><a href="${url}" target="_blank" rel="noopener noreferrer">${name}</a></li>`;
-    })
+    .map(({ name, urlTemplate }) => `<li><a href="${buildBoardUrl(urlTemplate, cityLabel, 'hiring careers jobs')}" target="_blank" rel="noopener noreferrer">${name}</a></li>`)
     .join('');
 };
 
 const renderHighVolumeLinks = (cityLabel, businesses) => {
   const links = [];
-
   externalJobSearches.forEach(({ name, urlTemplate }) => {
-    jobRoleKeywords.forEach((role) => {
-      links.push({
-        label: `${name} — ${role}`,
-        url: buildBoardUrl(urlTemplate, cityLabel, role)
-      });
-    });
+    jobRoleKeywords.forEach((role) => links.push({ label: `${name} — ${role}`, url: buildBoardUrl(urlTemplate, cityLabel, role) }));
   });
-
-  businesses.slice(0, 80).forEach((business) => {
-    const query = `${business.name} careers jobs`;
-    externalJobSearches.forEach(({ name, urlTemplate }) => {
-      links.push({
-        label: `${name} — ${business.name}`,
-        url: buildBoardUrl(urlTemplate, cityLabel, query)
-      });
-    });
+  businesses.slice(0, 100).forEach((business) => {
+    externalJobSearches.forEach(({ name, urlTemplate }) =>
+      links.push({ label: `${name} — ${business.name}`, url: buildBoardUrl(urlTemplate, cityLabel, `${business.name} jobs careers team join us`) })
+    );
   });
-
   highVolumeCount.textContent = `${links.length} search links generated.`;
   highVolumeLinksList.innerHTML = links
-    .slice(0, 220)
+    .slice(0, 260)
     .map(({ label, url }) => `<li><a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a></li>`)
     .join('');
 };
@@ -223,30 +181,23 @@ const renderHighVolumeLinks = (cityLabel, businesses) => {
 const renderCards = (results, strictMode) => {
   const visible = strictMode ? results.filter((item) => hasCareerSubpage(item.website)) : results;
   if (!visible.length) {
-    businessList.innerHTML =
-      '<p class="empty-state">No businesses matched the current filter. Turn off strict URL mode to show all businesses found for this city.</p>';
+    businessList.innerHTML = '<p class="empty-state">No employers matched this filter. Turn off strict URL mode to see all employers.</p>';
     return;
   }
-
   businessList.innerHTML = '';
   visible.forEach((business) => {
     const detectedCareerUrl = hasCareerSubpage(business.website);
-    const fallbackLinks = inferredCareerLinks(business.website);
     const linksHtml = detectedCareerUrl
       ? `<li><a href="${business.website}" target="_blank" rel="noopener noreferrer">${business.website}</a></li>`
-      : fallbackLinks.map((url) => `<li><a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a></li>`).join('');
+      : inferredCareerLinks(business.website).map((url) => `<li><a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a></li>`).join('');
 
     const localSearchLinks = externalJobSearches
       .map(({ name, urlTemplate }) => {
-        const query = `${business.name} jobs careers team join us`;
+        const query = `${business.name} jobs careers team join us hiring`;
         const url = buildBoardUrl(urlTemplate, cityInput.value || defaultCenter.label, query);
         return `<li><a href="${url}" target="_blank" rel="noopener noreferrer">${name} search for ${business.name}</a></li>`;
       })
       .join('');
-
-    const websiteLine = business.website
-      ? `<p class="url-line">Website: <a href="${business.website}" target="_blank" rel="noopener noreferrer">${business.website}</a></p>`
-      : '<p class="url-line">Website not listed in map data.</p>';
 
     const sourceLink = business.sourceUrl
       ? `<a href="${business.sourceUrl}" target="_blank" rel="noopener noreferrer">${business.source}</a>`
@@ -257,7 +208,7 @@ const renderCards = (results, strictMode) => {
     card.innerHTML = `
       <h3>${business.name}</h3>
       <p>${business.kind} • ${business.distance.toFixed(1)} miles away</p>
-      ${websiteLine}
+      <p class="url-line">${business.website ? `Website: <a href="${business.website}" target="_blank" rel="noopener noreferrer">${business.website}</a>` : 'Website not listed in map data.'}</p>
       <p><strong>${detectedCareerUrl ? 'Detected career/jobs URL' : 'Possible career/jobs links'}</strong></p>
       <ul class="url-list">${linksHtml || '<li>No website available to generate links.</li>'}</ul>
       <p><strong>More ways to find this employer hiring:</strong></p>
@@ -270,74 +221,56 @@ const renderCards = (results, strictMode) => {
 
 const withComputedDistance = (items, center) =>
   items
-    .map((business) => ({
-      ...business,
-      id: business.id || `${business.name.toLowerCase()}::${business.lat.toFixed(5)}::${business.lon.toFixed(5)}`,
-      distance: milesBetween(center.lat, center.lon, business.lat, business.lon)
-    }))
+    .map((business) => ({ ...business, id: business.id || `${business.name.toLowerCase()}::${business.lat.toFixed(5)}::${business.lon.toFixed(5)}`, distance: milesBetween(center.lat, center.lon, business.lat, business.lon) }))
     .sort((a, b) => a.distance - b.distance);
 
 const renderStatus = (items, center, radiusMiles, note = '') => {
   const withWebsite = items.filter((business) => Boolean(business.website)).length;
   const withCareerKeyword = items.filter((business) => hasCareerSubpage(business.website)).length;
-  statusMessage.textContent = `Found ${items.length} employers around ${center.label} (${radiusMiles} miles). ${withWebsite} include websites and ${withCareerKeyword} already include career/job keywords.${note}`;
+  statusMessage.textContent = `Found ${items.length} employers around ${center.label} (${radiusMiles} miles). ${withWebsite} include websites and ${withCareerKeyword} already include hiring keywords.${note}`;
 };
 
 const renderResults = async () => {
   const currentSearchId = ++activeSearchId;
   const radiusMiles = Number(radiusMilesInput.value) || 15;
-  const cityQuery = cityInput.value;
   const strictMode = strictUrlToggle.checked;
 
-  statusMessage.textContent = 'Loading quick results first, then expanding from map data…';
+  statusMessage.textContent = 'Loading fast local matches, then trying live map endpoints…';
   businessList.innerHTML = '';
 
+  const cityQuery = cityInput.value || defaultCenter.label;
+  let center;
+
   try {
-    const center = await geocodeCity(cityQuery);
+    center = await geocodeCity(cityQuery);
+  } catch {
+    center = resolveCityLocally(cityQuery) || defaultCenter;
+  }
 
-    const fallbackNearby = fallbackBusinesses
-      .filter((business) => milesBetween(center.lat, center.lon, business.lat, business.lon) <= radiusMiles)
-      .map((business) => ({ ...business, sourceUrl: business.website }));
+  const fallbackNearby = fallbackBusinesses
+    .filter((business) => milesBetween(center.lat, center.lon, business.lat, business.lon) <= radiusMiles)
+    .map((business) => ({ ...business, sourceUrl: business.website }));
 
-    let combined = withComputedDistance(dedupeBusinesses(fallbackNearby), center);
-    let discovered = [];
-    let liveMessage = '';
+  let combined = withComputedDistance(dedupeBusinesses(fallbackNearby), center);
+  renderExternalLinks(center.label);
+  renderHighVolumeLinks(center.label, combined);
+  renderStatus(combined, center, radiusMiles, ' Showing curated matches immediately.');
+  renderCards(combined, strictMode);
 
-    renderExternalLinks(center.label);
+  const discovered = await fetchBusinessesFromOverpass(center, radiusMiles);
+  if (currentSearchId !== activeSearchId) return;
+
+  if (discovered.length) {
+    combined = withComputedDistance(dedupeBusinesses([...discovered, ...fallbackNearby]), center);
+    renderStatus(combined, center, radiusMiles, ' Live local map employers merged in.');
     renderHighVolumeLinks(center.label, combined);
-    renderStatus(combined, center, radiusMiles, ` Showing fast curated matches now.${liveMessage}`);
     renderCards(combined, strictMode);
-    try {
-      discovered = await fetchBusinessesFromOverpass(center, radiusMiles);
-    } catch {
-      discovered = [];
-      liveMessage = ' Live map endpoints were unavailable, so only fallback employers are shown right now.';
-    }
-
-    if (currentSearchId !== activeSearchId) return;
-
-    if (!discovered.length && liveMessage) {
-      renderStatus(combined, center, radiusMiles, ` Showing fast curated matches now.${liveMessage}`);
-    }
-
-    if (discovered.length) {
-      combined = withComputedDistance(dedupeBusinesses([...discovered, ...fallbackNearby]), center);
-      renderStatus(combined, center, radiusMiles, ' Live map results merged in from Overpass endpoints.');
-      renderHighVolumeLinks(center.label, combined);
-      renderCards(combined, strictMode);
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unexpected error while searching.';
-    statusMessage.textContent = message;
-    businessList.innerHTML = '<p class="empty-state">Try a different city text (example: Baltimore, MD).</p>';
-    externalLinksList.innerHTML = '';
-    highVolumeLinksList.innerHTML = '';
-    highVolumeCount.textContent = '';
+  } else {
+    renderStatus(combined, center, radiusMiles, ' Live map endpoints unavailable right now, showing local curated + search links.');
   }
 };
 
 searchButton.addEventListener('click', renderResults);
 radiusMilesInput.addEventListener('change', renderResults);
 strictUrlToggle.addEventListener('change', renderResults);
-
 renderResults();
