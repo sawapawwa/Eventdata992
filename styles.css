@@ -10,7 +10,7 @@ body {
 }
 
 .container {
-  max-width: 980px;
+  max-width: 1080px;
   margin: 0 auto;
   padding: 2rem 1rem 3rem;
 }
@@ -49,6 +49,19 @@ input[type='number'] {
   grid-column: span 2;
 }
 
+.checkbox-line {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.92rem;
+}
+
+.checkbox-field {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
 .action-field {
   display: flex;
   align-items: end;
@@ -57,7 +70,7 @@ input[type='number'] {
 .grid {
   display: grid;
   gap: 1rem;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
 }
 
 .card {
@@ -96,6 +109,14 @@ input[type='number'] {
   overflow-wrap: anywhere;
   font-size: 0.9rem;
   color: #334155;
+}
+
+.url-list {
+  padding-left: 1.1rem;
+}
+
+.url-list a {
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 760px) {

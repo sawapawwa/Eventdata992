@@ -9,11 +9,10 @@
   <body>
     <main class="container">
       <header>
-        <h1>Career URL Finder (15-mile radius)</h1>
+        <h1>Career URL Finder (Mt Vernon default)</h1>
         <p>
-          Search from an exact location (default: Mt Vernon, Baltimore, MD) and only show business URLs whose
-          subpage path contains terms like <code>career</code>, <code>careers</code>, <code>job</code>, or
-          <code>jobs</code>.
+          Finds real nearby businesses from OpenStreetMap in your chosen radius. Strict mode only shows websites
+          where the URL already contains <code>career</code>/<code>jobs</code> keywords.
         </p>
       </header>
 
@@ -33,14 +32,22 @@
           <input id="radiusMiles" type="number" value="15" min="1" max="100" />
         </div>
 
+        <div class="field checkbox-field">
+          <label for="strictUrlToggle">Strict URL mode</label>
+          <div class="checkbox-line">
+            <input id="strictUrlToggle" type="checkbox" checked />
+            <span>Only show URLs containing careers/jobs keywords</span>
+          </div>
+        </div>
+
         <div class="field action-field">
-          <button id="searchButton" class="button" type="button">Find matching business URLs</button>
+          <button id="searchButton" class="button" type="button">Find businesses</button>
         </div>
       </section>
 
       <p id="statusMessage" class="result-count"></p>
       <section>
-        <h2>Matching URLs</h2>
+        <h2>Business websites and career links</h2>
         <div id="businessList" class="grid" aria-live="polite"></div>
       </section>
     </main>

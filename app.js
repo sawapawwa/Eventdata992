@@ -1,12 +1,11 @@
-import { businesses, defaultCenter } from './data.js';
+import { careerPathCandidates, careerSegments, defaultCenter } from './data.js';
 
 const locationQueryInput = document.querySelector('#locationQuery');
 const radiusMilesInput = document.querySelector('#radiusMiles');
 const searchButton = document.querySelector('#searchButton');
 const statusMessage = document.querySelector('#statusMessage');
 const businessList = document.querySelector('#businessList');
-
-const CAREER_SEGMENTS = ['career', 'careers', 'job', 'jobs', 'employment', 'opportunities'];
+const strictUrlToggle = document.querySelector('#strictUrlToggle');
 
 const toRadians = (degrees) => (degrees * Math.PI) / 180;
 
@@ -28,11 +27,30 @@ const hasCareerSubpage = (urlValue) => {
     const path = parsed.pathname.toLowerCase();
     const hostname = parsed.hostname.toLowerCase();
 
-    return CAREER_SEGMENTS.some(
+    return careerSegments.some(
       (segment) => path.includes(`/${segment}`) || path.includes(`${segment}/`) || hostname.startsWith(`${segment}.`)
     );
   } catch {
     return false;
+  }
+};
+
+const normalizeUrl = (value) => {
+  if (!value) {
+    return null;
+  }
+
+  const candidate = value.trim();
+  if (!candidate) {
+    return null;
+  }
+
+  const withProtocol = /^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`;
+
+  try {
+    return new URL(withProtocol).toString();
+  } catch {
+    return null;
   }
 };
 
@@ -60,50 +78,140 @@ const geocodeLocation = async (query) => {
   }
 
   return {
-    label: trimmed,
+    label: results[0].display_name || trimmed,
     lat: Number(results[0].lat),
     lon: Number(results[0].lon)
   };
 };
 
+const fetchBusinessesFromOverpass = async (center, radiusMiles) => {
+  const radiusMeters = Math.round(radiusMiles * 1609.34);
+  const query = `
+[out:json][timeout:25];
+(
+  node(around:${radiusMeters},${center.lat},${center.lon})[name][website];
+  way(around:${radiusMeters},${center.lat},${center.lon})[name][website];
+  relation(around:${radiusMeters},${center.lat},${center.lon})[name][website];
+);
+out center tags;
+`.trim();
+
+  const response = await fetch('https://overpass-api.de/api/interpreter', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'text/plain;charset=UTF-8'
+    },
+    body: query
+  });
+
+  if (!response.ok) {
+    throw new Error('Unable to fetch nearby businesses from OpenStreetMap right now.');
+  }
+
+  const data = await response.json();
+  const deduped = new Map();
+
+  (data.elements || []).forEach((element) => {
+    const tags = element.tags || {};
+    const website = normalizeUrl(tags.website || tags['contact:website']);
+    const name = (tags.name || '').trim();
+    const lat = element.lat ?? element.center?.lat;
+    const lon = element.lon ?? element.center?.lon;
+
+    if (!website || !name || typeof lat !== 'number' || typeof lon !== 'number') {
+      return;
+    }
+
+    const key = `${name.toLowerCase()}::${website.toLowerCase()}`;
+    if (!deduped.has(key)) {
+      deduped.set(key, {
+        id: key,
+        name,
+        website,
+        lat,
+        lon,
+        kind: tags.shop || tags.amenity || tags.office || tags.tourism || 'business'
+      });
+    }
+  });
+
+  return [...deduped.values()];
+};
+
+const inferredCareerLinks = (website) => {
+  try {
+    const parsed = new URL(website);
+    const base = `${parsed.protocol}//${parsed.host}`;
+    return careerPathCandidates.map((path) => `${base}${path}`);
+  } catch {
+    return [];
+  }
+};
+
+const renderCards = (results, strictMode) => {
+  if (!results.length) {
+    businessList.innerHTML = '<p class="empty-state">No business websites were found in this radius. Try increasing miles or changing the location text.</p>';
+    return;
+  }
+
+  businessList.innerHTML = '';
+
+  results.forEach((business) => {
+    const careerUrlFound = hasCareerSubpage(business.website);
+    const linkList = careerUrlFound ? [business.website] : inferredCareerLinks(business.website);
+
+    if (strictMode && !careerUrlFound) {
+      return;
+    }
+
+    const linksHtml = linkList
+      .map(
+        (url) => `<li><a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a></li>`
+      )
+      .join('');
+
+    const card = document.createElement('article');
+    card.className = 'card';
+    card.innerHTML = `
+      <h3>${business.name}</h3>
+      <p>${business.kind} • ${business.distance.toFixed(1)} miles away</p>
+      <p class="url-line">Main website: <a href="${business.website}" target="_blank" rel="noopener noreferrer">${business.website}</a></p>
+      <p><strong>${careerUrlFound ? 'Detected career/jobs URL(s)' : 'Possible careers/jobs URLs to check'}</strong></p>
+      <ul class="url-list">${linksHtml}</ul>
+    `;
+
+    businessList.append(card);
+  });
+
+  if (!businessList.children.length) {
+    businessList.innerHTML = '<p class="empty-state">No websites had career/job path keywords. Turn off strict mode to see businesses plus suggested career links.</p>';
+  }
+};
+
 const renderResults = async () => {
   const radiusMiles = Number(radiusMilesInput.value) || 15;
   const locationQuery = locationQueryInput.value;
+  const strictMode = strictUrlToggle.checked;
 
-  statusMessage.textContent = 'Searching…';
+  statusMessage.textContent = 'Searching nearby businesses from OpenStreetMap…';
   businessList.innerHTML = '';
 
   try {
     const center = await geocodeLocation(locationQuery);
+    const discovered = await fetchBusinessesFromOverpass(center, radiusMiles);
 
-    const filtered = businesses
-      .filter((business) => hasCareerSubpage(business.website))
+    const withDistance = discovered
       .map((business) => ({
         ...business,
         distance: milesBetween(center.lat, center.lon, business.lat, business.lon)
       }))
-      .filter((business) => business.distance <= radiusMiles)
       .sort((a, b) => a.distance - b.distance);
 
-    statusMessage.textContent = `${filtered.length} matching business URL${filtered.length === 1 ? '' : 's'} found within ${radiusMiles} miles of ${center.label}.`;
+    const strictMatches = withDistance.filter((business) => hasCareerSubpage(business.website)).length;
 
-    if (!filtered.length) {
-      businessList.innerHTML = '<p class="empty-state">No matching career/job URLs found in that radius.</p>';
-      return;
-    }
+    statusMessage.textContent = `Found ${withDistance.length} business website${withDistance.length === 1 ? '' : 's'} within ${radiusMiles} miles of ${center.label}. ${strictMatches} already include career/job keywords in URL.`;
 
-    filtered.forEach((business) => {
-      const card = document.createElement('article');
-      card.className = 'card';
-      card.innerHTML = `
-        <h3>${business.name}</h3>
-        <p>${business.location}</p>
-        <p><strong>${business.distance.toFixed(1)} miles away</strong></p>
-        <p class="url-line">${business.website}</p>
-        <a class="button" href="${business.website}" target="_blank" rel="noopener noreferrer">Open career/jobs URL</a>
-      `;
-      businessList.append(card);
-    });
+    renderCards(withDistance, strictMode);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unexpected error while searching.';
     statusMessage.textContent = message;
@@ -113,5 +221,6 @@ const renderResults = async () => {
 
 searchButton.addEventListener('click', renderResults);
 radiusMilesInput.addEventListener('change', renderResults);
+strictUrlToggle.addEventListener('change', renderResults);
 
 renderResults();
