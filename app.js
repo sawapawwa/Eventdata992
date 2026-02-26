@@ -1,4 +1,11 @@
-import { businessTagPairs, careerPathCandidates, careerSegments, defaultCenter, fallbackBusinesses } from './data.js';
+import {
+  businessTagPairs,
+  careerPathCandidates,
+  careerSegments,
+  defaultCenter,
+  externalJobSearches,
+  fallbackBusinesses
+} from './data.js';
 
 const cityInput = document.querySelector('#cityQuery');
 const radiusMilesInput = document.querySelector('#radiusMiles');
@@ -6,6 +13,7 @@ const searchButton = document.querySelector('#searchButton');
 const statusMessage = document.querySelector('#statusMessage');
 const businessList = document.querySelector('#businessList');
 const strictUrlToggle = document.querySelector('#strictUrlToggle');
+const externalLinksList = document.querySelector('#externalLinksList');
 
 const toRadians = (degrees) => (degrees * Math.PI) / 180;
 
@@ -57,7 +65,6 @@ const normalizeUrl = (value) => {
     return null;
   }
 };
-
 
 const buildOverpassCategoryQuery = (radiusMeters, center) => {
   const lines = [];
@@ -133,6 +140,7 @@ out center tags;
 
     const website = normalizeUrl(tags.website || tags['contact:website']);
     const kind = tags.shop || tags.amenity || tags.office || 'business';
+    const sourceUrl = `https://www.openstreetmap.org/${element.type}/${element.id}`;
 
     const key = `${name.toLowerCase()}::${lat.toFixed(5)}::${lon.toFixed(5)}`;
     if (!deduped.has(key)) {
@@ -142,7 +150,9 @@ out center tags;
         website,
         lat,
         lon,
-        kind
+        kind,
+        source: 'OpenStreetMap',
+        sourceUrl
       });
     }
   });
@@ -162,6 +172,31 @@ const inferredCareerLinks = (website) => {
   } catch {
     return [];
   }
+};
+
+const dedupeBusinesses = (items) => {
+  const map = new Map();
+
+  items.forEach((business) => {
+    const key = business.website ? business.website.toLowerCase() : business.name.toLowerCase();
+    if (!map.has(key)) {
+      map.set(key, business);
+    }
+  });
+
+  return [...map.values()];
+};
+
+const renderExternalLinks = (cityLabel) => {
+  const city = encodeURIComponent(cityLabel);
+  const query = encodeURIComponent('hiring careers jobs');
+
+  externalLinksList.innerHTML = externalJobSearches
+    .map(({ name, urlTemplate }) => {
+      const url = urlTemplate.replace('{city}', city).replace('{query}', query);
+      return `<li><a href="${url}" target="_blank" rel="noopener noreferrer">${name}</a></li>`;
+    })
+    .join('');
 };
 
 const renderCards = (results, strictMode) => {
@@ -189,6 +224,10 @@ const renderCards = (results, strictMode) => {
       ? `<p class="url-line">Website: <a href="${business.website}" target="_blank" rel="noopener noreferrer">${business.website}</a></p>`
       : '<p class="url-line">Website not listed in map data.</p>';
 
+    const sourceLink = business.sourceUrl
+      ? `<a href="${business.sourceUrl}" target="_blank" rel="noopener noreferrer">${business.source}</a>`
+      : business.source || 'Fallback Curated List';
+
     const card = document.createElement('article');
     card.className = 'card';
     card.innerHTML = `
@@ -197,11 +236,11 @@ const renderCards = (results, strictMode) => {
       ${websiteLine}
       <p><strong>${detectedCareerUrl ? 'Detected career/jobs URL' : 'Possible career/jobs links'}</strong></p>
       <ul class="url-list">${linksHtml || '<li>No website available to generate links.</li>'}</ul>
+      <p class="source-line">Source: ${sourceLink}</p>
     `;
     businessList.append(card);
   });
 };
-
 
 const withComputedDistance = (items, center) =>
   items
@@ -223,7 +262,6 @@ const renderResults = async () => {
   try {
     const center = await geocodeCity(cityQuery);
     let discovered = [];
-    let sourceLabel = 'OpenStreetMap';
 
     try {
       discovered = await fetchBusinessesFromOverpass(center, radiusMiles);
@@ -231,25 +269,25 @@ const renderResults = async () => {
       discovered = [];
     }
 
-    if (!discovered.length) {
-      sourceLabel = 'built-in fallback list';
-      discovered = fallbackBusinesses.filter(
-        (business) => milesBetween(center.lat, center.lon, business.lat, business.lon) <= radiusMiles
-      );
-    }
+    const fallbackNearby = fallbackBusinesses
+      .filter((business) => milesBetween(center.lat, center.lon, business.lat, business.lon) <= radiusMiles)
+      .map((business) => ({ ...business, sourceUrl: business.website }));
 
-    const withDistance = withComputedDistance(discovered, center);
+    const combined = dedupeBusinesses([...discovered, ...fallbackNearby]);
+    const withDistance = withComputedDistance(combined, center);
 
     const withWebsite = withDistance.filter((business) => Boolean(business.website)).length;
     const withCareerKeyword = withDistance.filter((business) => hasCareerSubpage(business.website)).length;
 
-    statusMessage.textContent = `Found ${withDistance.length} businesses around ${center.label} (${radiusMiles} miles) from ${sourceLabel}. ${withWebsite} include websites and ${withCareerKeyword} already include career/job keywords.`;
+    statusMessage.textContent = `Found ${withDistance.length} businesses around ${center.label} (${radiusMiles} miles). ${withWebsite} include websites and ${withCareerKeyword} already include career/job keywords.`;
 
+    renderExternalLinks(center.label);
     renderCards(withDistance, strictMode);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unexpected error while searching.';
     statusMessage.textContent = message;
     businessList.innerHTML = '<p class="empty-state">Try a different city text (example: Baltimore, MD).</p>';
+    externalLinksList.innerHTML = '';
   }
 };
 
