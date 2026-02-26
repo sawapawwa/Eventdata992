@@ -1,4 +1,4 @@
-import { careerPathCandidates, careerSegments, defaultCenter } from './data.js';
+import { businessTagPairs, careerPathCandidates, careerSegments, defaultCenter } from './data.js';
 
 const cityInput = document.querySelector('#cityQuery');
 const radiusMilesInput = document.querySelector('#radiusMiles');
@@ -58,6 +58,19 @@ const normalizeUrl = (value) => {
   }
 };
 
+
+const buildOverpassCategoryQuery = (radiusMeters, center) => {
+  const lines = [];
+
+  businessTagPairs.forEach(([tag, pattern]) => {
+    ['node', 'way', 'relation'].forEach((entity) => {
+      lines.push(`  ${entity}(around:${radiusMeters},${center.lat},${center.lon})[name][${tag}~"${pattern}"];`);
+    });
+  });
+
+  return lines.join('\n');
+};
+
 const geocodeCity = async (query) => {
   const trimmed = query.trim();
 
@@ -86,18 +99,11 @@ const geocodeCity = async (query) => {
 
 const fetchBusinessesFromOverpass = async (center, radiusMiles) => {
   const radiusMeters = Math.round(radiusMiles * 1609.34);
+  const categoryQuery = buildOverpassCategoryQuery(radiusMeters, center);
   const query = `
-[out:json][timeout:40];
+[out:json][timeout:60];
 (
-  node(around:${radiusMeters},${center.lat},${center.lon})[name][shop];
-  node(around:${radiusMeters},${center.lat},${center.lon})[name][amenity];
-  node(around:${radiusMeters},${center.lat},${center.lon})[name][office];
-  way(around:${radiusMeters},${center.lat},${center.lon})[name][shop];
-  way(around:${radiusMeters},${center.lat},${center.lon})[name][amenity];
-  way(around:${radiusMeters},${center.lat},${center.lon})[name][office];
-  relation(around:${radiusMeters},${center.lat},${center.lon})[name][shop];
-  relation(around:${radiusMeters},${center.lat},${center.lon})[name][amenity];
-  relation(around:${radiusMeters},${center.lat},${center.lon})[name][office];
+${categoryQuery}
 );
 out center tags;
 `.trim();
@@ -201,7 +207,7 @@ const renderResults = async () => {
   const cityQuery = cityInput.value;
   const strictMode = strictUrlToggle.checked;
 
-  statusMessage.textContent = 'Searching businesses in city area…';
+  statusMessage.textContent = 'Searching businesses across many categories in this city area…';
   businessList.innerHTML = '';
 
   try {

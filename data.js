@@ -14,3 +14,18 @@ export const careerPathCandidates = [
   '/employment',
   '/opportunities'
 ];
+
+
+export const businessTagPairs = [
+  ['shop', '.*'],
+  ['amenity', '.*'],
+  ['office', '.*'],
+  ['craft', '.*'],
+  ['tourism', '.*'],
+  ['leisure', '.*'],
+  ['healthcare', '.*'],
+  ['man_made', 'works'],
+  ['industrial', '.*'],
+  ['landuse', 'commercial|retail|industrial'],
+  ['building', 'commercial|retail|industrial|office']
+];
