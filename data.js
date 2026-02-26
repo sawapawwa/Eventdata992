@@ -87,3 +87,19 @@ export const overpassEndpoints = [
   'https://overpass.kumi.systems/api/interpreter',
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter'
 ];
+
+
+export const cityCenters = {
+  'baltimore': { label: 'Baltimore, MD', lat: 39.2904, lon: -76.6122 },
+  'baltimore, md': { label: 'Baltimore, MD', lat: 39.2904, lon: -76.6122 },
+  'mt vernon': { label: 'Mt Vernon, Baltimore, MD', lat: 39.2974, lon: -76.6169 },
+  'mt vernon baltimore': { label: 'Mt Vernon, Baltimore, MD', lat: 39.2974, lon: -76.6169 },
+  'washington, dc': { label: 'Washington, DC', lat: 38.9072, lon: -77.0369 },
+  'new york, ny': { label: 'New York, NY', lat: 40.7128, lon: -74.006 },
+  'philadelphia, pa': { label: 'Philadelphia, PA', lat: 39.9526, lon: -75.1652 }
+};
+
+
+export const hiringKeywords = [
+  'jobs','job','career','careers','hiring','join-us','join','join-our-team','team','our-team','work-with-us','work-for-us','apply','apply-now','openings','vacancies','positions','recruitment','talent','talent-acquisition','employment','opportunities','internships','apprenticeships','students','graduates','early-careers','experienced-hires','leadership','part-time','full-time','contract','freelance','remote','hybrid','on-site','staffing','human-resources','hr','people','culture','company/careers','about/careers','about-us/careers','careers-at','opportunities-at','become-a-driver','become-a-partner','work','work-here','join-team','join-the-team','hiring-now','now-hiring','available-positions','job-openings','career-opportunities','employment-opportunities','joinus','jobs-at','careers-at-company','applytoday','vacancy','vacancies-list','jobs-list','roles','current-openings','find-jobs','search-jobs','candidate','recruiting','join-our-company','future-talent','graduates-and-interns','interns','fellows','residency','residents','physician-jobs','nursing-jobs'
+];

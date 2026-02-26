@@ -7,7 +7,8 @@ import {
   fallbackBusinesses,
   jobRoleKeywords,
   overpassEndpoints,
-  cityCenters
+  cityCenters,
+  hiringKeywords
 } from './data.js';
 
 const cityInput = document.querySelector('#cityQuery');
@@ -137,7 +138,14 @@ const inferredCareerLinks = (website) => {
   try {
     const parsed = new URL(website);
     const base = `${parsed.protocol}//${parsed.host}`;
-    return careerPathCandidates.map((path) => `${base}${path}`);
+    const candidates = new Set(careerPathCandidates.map((path) => `${base}${path}`));
+
+    hiringKeywords.forEach((keyword) => {
+      const clean = keyword.toLowerCase().replace(/[^a-z0-9-/]/g, '-').replace(/--+/g, '-');
+      candidates.add(`${base}/${clean}`);
+    });
+
+    return [...candidates].slice(0, 80);
   } catch {
     return [];
   }
@@ -189,7 +197,7 @@ const renderCards = (results, strictMode) => {
     const detectedCareerUrl = hasCareerSubpage(business.website);
     const linksHtml = detectedCareerUrl
       ? `<li><a href="${business.website}" target="_blank" rel="noopener noreferrer">${business.website}</a></li>`
-      : inferredCareerLinks(business.website).map((url) => `<li><a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a></li>`).join('');
+      : inferredCareerLinks(business.website).slice(0, 20).map((url) => `<li><a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a></li>`).join('');
 
     const localSearchLinks = externalJobSearches
       .map(({ name, urlTemplate }) => {
@@ -266,7 +274,7 @@ const renderResults = async () => {
     renderHighVolumeLinks(center.label, combined);
     renderCards(combined, strictMode);
   } else {
-    renderStatus(combined, center, radiusMiles, ' Live map endpoints unavailable right now, showing local curated + search links.');
+    renderStatus(combined, center, radiusMiles, ' Live map endpoints unavailable right now, showing local curated + SEO keyword path guesses + search links.');
   }
 };
 
