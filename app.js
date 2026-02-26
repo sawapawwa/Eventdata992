@@ -80,6 +80,16 @@ const buildOverpassCategoryQuery = (radiusMeters, center) => {
   return lines.join('\n');
 };
 
+
+const buildWebsitePresenceQuery = (radiusMeters, center) => `
+  node(around:${radiusMeters},${center.lat},${center.lon})[website];
+  way(around:${radiusMeters},${center.lat},${center.lon})[website];
+  relation(around:${radiusMeters},${center.lat},${center.lon})[website];
+  node(around:${radiusMeters},${center.lat},${center.lon})["contact:website"];
+  way(around:${radiusMeters},${center.lat},${center.lon})["contact:website"];
+  relation(around:${radiusMeters},${center.lat},${center.lon})["contact:website"];
+`.trim();
+
 const resolveCityLocally = (query) => {
   const key = query.trim().toLowerCase();
   if (!key) return defaultCenter;
@@ -115,11 +125,16 @@ const fetchBusinessesFromOverpass = async (center, radiusMiles) => {
       const deduped = new Map();
       (data.elements || []).forEach((element) => {
         const tags = element.tags || {};
-        const name = (tags.name || '').trim();
         const lat = element.lat ?? element.center?.lat;
         const lon = element.lon ?? element.center?.lon;
-        if (!name || typeof lat !== 'number' || typeof lon !== 'number') return;
         const website = normalizeUrl(tags.website || tags['contact:website']);
+        let name = (tags.name || '').trim();
+        if (!name && website) {
+          try {
+            name = new URL(website).hostname.replace(/^www\./, '');
+          } catch {}
+        }
+        if (!name || typeof lat !== 'number' || typeof lon !== 'number') return;
         const kind = tags.shop || tags.amenity || tags.office || tags.craft || 'business';
         const sourceUrl = `https://www.openstreetmap.org/${element.type}/${element.id}`;
         const key = `${name.toLowerCase()}::${lat.toFixed(5)}::${lon.toFixed(5)}`;
