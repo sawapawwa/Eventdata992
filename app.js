@@ -1,4 +1,4 @@
-import { businessTagPairs, careerPathCandidates, careerSegments, defaultCenter } from './data.js';
+import { businessTagPairs, careerPathCandidates, careerSegments, defaultCenter, fallbackBusinesses } from './data.js';
 
 const cityInput = document.querySelector('#cityQuery');
 const radiusMilesInput = document.querySelector('#radiusMiles');
@@ -202,6 +202,16 @@ const renderCards = (results, strictMode) => {
   });
 };
 
+
+const withComputedDistance = (items, center) =>
+  items
+    .map((business) => ({
+      ...business,
+      id: business.id || `${business.name.toLowerCase()}::${business.lat.toFixed(5)}::${business.lon.toFixed(5)}`,
+      distance: milesBetween(center.lat, center.lon, business.lat, business.lon)
+    }))
+    .sort((a, b) => a.distance - b.distance);
+
 const renderResults = async () => {
   const radiusMiles = Number(radiusMilesInput.value) || 15;
   const cityQuery = cityInput.value;
@@ -212,16 +222,28 @@ const renderResults = async () => {
 
   try {
     const center = await geocodeCity(cityQuery);
-    const discovered = await fetchBusinessesFromOverpass(center, radiusMiles);
+    let discovered = [];
+    let sourceLabel = 'OpenStreetMap';
 
-    const withDistance = discovered
-      .map((business) => ({ ...business, distance: milesBetween(center.lat, center.lon, business.lat, business.lon) }))
-      .sort((a, b) => a.distance - b.distance);
+    try {
+      discovered = await fetchBusinessesFromOverpass(center, radiusMiles);
+    } catch {
+      discovered = [];
+    }
+
+    if (!discovered.length) {
+      sourceLabel = 'built-in fallback list';
+      discovered = fallbackBusinesses.filter(
+        (business) => milesBetween(center.lat, center.lon, business.lat, business.lon) <= radiusMiles
+      );
+    }
+
+    const withDistance = withComputedDistance(discovered, center);
 
     const withWebsite = withDistance.filter((business) => Boolean(business.website)).length;
     const withCareerKeyword = withDistance.filter((business) => hasCareerSubpage(business.website)).length;
 
-    statusMessage.textContent = `Found ${withDistance.length} businesses around ${center.label} (${radiusMiles} miles). ${withWebsite} include websites and ${withCareerKeyword} already include career/job keywords.`;
+    statusMessage.textContent = `Found ${withDistance.length} businesses around ${center.label} (${radiusMiles} miles) from ${sourceLabel}. ${withWebsite} include websites and ${withCareerKeyword} already include career/job keywords.`;
 
     renderCards(withDistance, strictMode);
   } catch (error) {
