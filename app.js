@@ -15,6 +15,8 @@ const businessList = document.querySelector('#businessList');
 const strictUrlToggle = document.querySelector('#strictUrlToggle');
 const externalLinksList = document.querySelector('#externalLinksList');
 
+let activeSearchId = 0;
+
 const toRadians = (degrees) => (degrees * Math.PI) / 180;
 
 const milesBetween = (lat1, lon1, lat2, lon2) => {
@@ -108,11 +110,11 @@ const fetchBusinessesFromOverpass = async (center, radiusMiles) => {
   const radiusMeters = Math.round(radiusMiles * 1609.34);
   const categoryQuery = buildOverpassCategoryQuery(radiusMeters, center);
   const query = `
-[out:json][timeout:60];
+[out:json][timeout:25];
 (
 ${categoryQuery}
 );
-out center tags;
+out center tags 250;
 `.trim();
 
   const response = await fetch('https://overpass-api.de/api/interpreter', {
@@ -139,7 +141,7 @@ out center tags;
     }
 
     const website = normalizeUrl(tags.website || tags['contact:website']);
-    const kind = tags.shop || tags.amenity || tags.office || 'business';
+    const kind = tags.shop || tags.amenity || tags.office || tags.craft || 'business';
     const sourceUrl = `https://www.openstreetmap.org/${element.type}/${element.id}`;
 
     const key = `${name.toLowerCase()}::${lat.toFixed(5)}::${lon.toFixed(5)}`;
@@ -251,38 +253,49 @@ const withComputedDistance = (items, center) =>
     }))
     .sort((a, b) => a.distance - b.distance);
 
+const renderStatus = (items, center, radiusMiles, note = '') => {
+  const withWebsite = items.filter((business) => Boolean(business.website)).length;
+  const withCareerKeyword = items.filter((business) => hasCareerSubpage(business.website)).length;
+  statusMessage.textContent = `Found ${items.length} businesses around ${center.label} (${radiusMiles} miles). ${withWebsite} include websites and ${withCareerKeyword} already include career/job keywords.${note}`;
+};
+
 const renderResults = async () => {
+  const currentSearchId = ++activeSearchId;
   const radiusMiles = Number(radiusMilesInput.value) || 15;
   const cityQuery = cityInput.value;
   const strictMode = strictUrlToggle.checked;
 
-  statusMessage.textContent = 'Searching businesses across many categories in this city area…';
+  statusMessage.textContent = 'Loading quick results first, then expanding from map data…';
   businessList.innerHTML = '';
 
   try {
     const center = await geocodeCity(cityQuery);
-    let discovered = [];
 
+    const fallbackNearby = fallbackBusinesses
+      .filter((business) => milesBetween(center.lat, center.lon, business.lat, business.lon) <= radiusMiles)
+      .map((business) => ({ ...business, sourceUrl: business.website }));
+
+    let combined = withComputedDistance(dedupeBusinesses(fallbackNearby), center);
+    renderExternalLinks(center.label);
+    renderStatus(combined, center, radiusMiles, ' Showing fast curated matches now.');
+    renderCards(combined, strictMode);
+
+    let discovered = [];
     try {
       discovered = await fetchBusinessesFromOverpass(center, radiusMiles);
     } catch {
       discovered = [];
     }
 
-    const fallbackNearby = fallbackBusinesses
-      .filter((business) => milesBetween(center.lat, center.lon, business.lat, business.lon) <= radiusMiles)
-      .map((business) => ({ ...business, sourceUrl: business.website }));
+    if (currentSearchId !== activeSearchId) {
+      return;
+    }
 
-    const combined = dedupeBusinesses([...discovered, ...fallbackNearby]);
-    const withDistance = withComputedDistance(combined, center);
-
-    const withWebsite = withDistance.filter((business) => Boolean(business.website)).length;
-    const withCareerKeyword = withDistance.filter((business) => hasCareerSubpage(business.website)).length;
-
-    statusMessage.textContent = `Found ${withDistance.length} businesses around ${center.label} (${radiusMiles} miles). ${withWebsite} include websites and ${withCareerKeyword} already include career/job keywords.`;
-
-    renderExternalLinks(center.label);
-    renderCards(withDistance, strictMode);
+    if (discovered.length) {
+      combined = withComputedDistance(dedupeBusinesses([...discovered, ...fallbackNearby]), center);
+      renderStatus(combined, center, radiusMiles, ' Live map results merged in.');
+      renderCards(combined, strictMode);
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unexpected error while searching.';
     statusMessage.textContent = message;
